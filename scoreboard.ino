@@ -138,6 +138,8 @@ void setup(){
     
     pinMode(BLUEBUTTON, INPUT); // Setup BLUE button
     // pinMode(REDBUTTON, INPUT);  // Setup RED button
+
+    // pinMode(latchPin, OUTPUT);
     
     Serial.begin(9600); // Start serial output
 }
