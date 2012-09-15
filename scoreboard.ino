@@ -15,32 +15,12 @@ int n = 1;
 // Active Screen Variable
 // Blue = 0
 // Red = 1
-int active_display = 0;
-
-// Instantiate player's scores                    
-int blueCount = 0;
-int redCount = 0;
-
-// Instantiate screen bytes
-byte blueByte = B00011000;
-byte redByte = B00011000;
+volatile int active_display = 0;
 
 //
 // Make array of 7 seg digits
 // Common anode means digital low (0) turns an led ON!
 //
-byte numArray[10] = {  0x11, // 0 dec 0001 0001 bin
-                       0xD7, // 1 dec 1101 0111 bin
-                       0x32, // 2 dec 0011 0010 bin
-                       0x92, // 3 dec 1001 0010 bin
-                       0xD4, // 4 dec 1101 0100 bin
-                       0x98, // 5 dec 1001 1000 bin
-                       0x08, // 6 dec 0000 1000 bin
-                       0xD3, // 7 dec 1101 0011 bin
-                       0x10, // 8 dec 0001 0000 bin
-                       0x80  // 9 dec 1000 0000 bin
-                     };
-
 byte segArray[10] = {  B00011000, // 0 dec
                        B01111011, // 1 dec
                        B00101100, // 2 dec
@@ -53,10 +33,17 @@ byte segArray[10] = {  B00011000, // 0 dec
                        B00001011  // 9 dec
                       };
 
-// // Instantiate RED BUTTON object
-// Bounce redButton = Bounce(REDBUTTON, 5);
-// int rbuttonState = 0;
-// int rlastButtonState = 1;
+// Instantiate player's scores                    
+int blueCount = 0;
+int redCount = 0;
+
+// Instantiate screen bytes
+byte blueByte = segArray[blueCount];
+byte redByte = segArray[redCount];
+
+// Timer2 reload value, globally available
+unsigned int tcnt2;
+
 
 ////////////////////////////////////////////////
 // USER FUNCTIONS
@@ -67,26 +54,19 @@ byte segArray[10] = {  B00011000, // 0 dec
 //
 void updateScreen(int screen1, int screen2) {
     // Lookup LED in array
-    byte blueScreen = segArray[screen1];
-    byte redScreen = segArray[screen2];
+    blueByte = segArray[screen1];
+    redByte = segArray[screen2];
     
-    // Shift data into the two registers
-    digitalWrite(latchPin, 0); // LATCH LOW TO SHIFT
-    // shiftOut(dataPin, clockPin, blueScreen);
-    shiftOut(dataPin, clockPin, MSBFIRST, blueScreen);  
-    // shiftOut(dataPin, clockPin, redScreen);
-    digitalWrite(latchPin, 1); // ENABLE SHIFTED BITS
-
     Serial.print("Blue Screen:\n");
     Serial.print("\tbits: ");
-    Serial.print(blueScreen, BIN);
+    Serial.print(blueByte, BIN);
     Serial.print("\n");
     Serial.print("\tNum: ");
     Serial.print(screen1, DEC);
     Serial.print("\n");
     Serial.print("Red Screen:\n");
     Serial.print("\tbits: ");
-    Serial.print(redScreen, BIN);
+    Serial.print(redByte, BIN);
     Serial.print("\n");
     Serial.print("\tNum: ");
     Serial.print(screen2, DEC);
@@ -94,22 +74,23 @@ void updateScreen(int screen1, int screen2) {
     Serial.print("************************\n");
 }
 
+// Shift one digit byte into the register
 void displayDigit(byte screen){
-    // Shift data into the two registers
+    // Shift data into the shift register
     digitalWrite(latchPin, 0); // LATCH LOW TO SHIFT
-    // shiftOut(dataPin, clockPin, blueScreen);
     shiftOut(dataPin, clockPin, MSBFIRST, screen);  
-    // shiftOut(dataPin, clockPin, redScreen);
     digitalWrite(latchPin, 1); // ENABLE SHIFTED BITS
 }
 
-void multiplexScreens(){
+// Multiplexing Interupt Service Routine
+ISR(TIMER2_OVF_vect){
+  
   // Turn off the active display
   if(active_display == 0){
-    digitalWrite(BLUETRANS, LOW);
+    digitalWrite(BLUETRANS, HIGH);
   }
   else{
-    digitalWrite(REDTRANS, LOW);
+    digitalWrite(REDTRANS, HIGH);
   }
 
   // Toggle Display
@@ -125,11 +106,14 @@ void multiplexScreens(){
 
   // Turn display back on
   if(active_display == 0){
-    digitalWrite(BLUETRANS, HIGH);
+    digitalWrite(BLUETRANS, LOW);
   }
   else{
-    digitalWrite(REDTRANS, HIGH);
+    digitalWrite(REDTRANS, LOW);
   }
+
+  // Reload the timer
+  TCNT2 = tcnt2;
 }
 
 
@@ -150,15 +134,12 @@ Bounce blueButton = Bounce(BLUEBUTTON, 5);
 int bbuttonState = 0;
 int blastButtonState = 1;
 
-// // Instantiate RED BUTTON object
-// Bounce redButton = Bounce(REDBUTTON, 5);
-// int rbuttonState = 0;
-// int rlastButtonState = 1;
+// Instantiate RED BUTTON object
+Bounce redButton = Bounce(REDBUTTON, 5);
+int rbuttonState = 0;
+int rlastButtonState = 1;
 
 void setup(){
-    
-    pinMode(BLUEBUTTON, INPUT); // Setup BLUE button
-    // pinMode(REDBUTTON, INPUT);  // Setup RED button
 
     pinMode(latchPin, OUTPUT);
     pinMode(dataPin, OUTPUT);
@@ -168,20 +149,34 @@ void setup(){
     pinMode(BLUETRANS, OUTPUT);
     pinMode(REDTRANS, OUTPUT);
 
-    // Instantiate player's scores                    
-    int blueCount = 0;
-    int redCount = 0;
+    // Setup TIMER2 to multiplex the displays
+    /* First disable the timer overflow interrupt while we're configuring */
+    TIMSK2 &= ~(1<<TOIE2);
+    /* Configure timer2 in normal mode (pure counting, no PWM etc.) */
+    TCCR2A &= ~((1<<WGM21) | (1<<WGM20));
+    TCCR2B &= ~(1<<WGM22);
+    /* Select clock source: internal I/O clock */
+    ASSR &= ~(1<<AS2);
+    /* Now configure the prescaler to CPU clock divided by 1024 */
+    TCCR2B |= (1<<CS22)  | (1<<CS21) | (1<<CS20); // Set bits
+    /* We need to calculate a proper value to load the timer counter.
+     * The following loads the value 151 into the Timer 2 counter register
+     * The math behind this is:
+     * (CPU frequency) / (prescaler value) = (new timer freq)
+     * 16 MHz / 1024 = 15625 Hz = 64 us period
+     * We want a 150 Hz refresh rate so...
+     * 1 / 150 = 6 ms period
+     * (desired period) /  us = 125.
+     * 6ms / 64us = 104
+     * 256 - 104 = 151;
+     */
+    /* Save value globally for later reload in ISR */
+    tcnt2 = 151; 
+    /* Finally load end enable the timer */
+    TCNT2 = tcnt2;
+    TIMSK2 |= (1<<TOIE2);
 
-    // Instantiate BLUE BUTTON object
-    Bounce blueButton = Bounce(BLUEBUTTON, 5);
-    int bbuttonState = 0;
-    int blastButtonState = 1;
-
-    // // Instantiate RED BUTTON object
-    // Bounce redButton = Bounce(REDBUTTON, 5);
-    // int rbuttonState = 0;
-    // int rlastButtonState = 1;
-    
+  
     Serial.begin(9600); // Start serial output
 }
 
@@ -192,8 +187,8 @@ void setup(){
 //
 void loop(){
     if(n == 1) {
-      digitalWrite(BLUETRANS, LOW);
-      digitalWrite(REDTRANS, HIGH);
+      // digitalWrite(BLUETRANS, LOW);
+      // digitalWrite(REDTRANS, HIGH);
       Serial.print("###                 ###\n");
       Serial.print("### SCORE-TRON 3000 ###\n");
       Serial.print("###                 ###\n");
@@ -201,9 +196,9 @@ void loop(){
       n++; 
     }
 
-//
-// SERVICE BLUE PLAYER
-//
+  //
+  // SERVICE BLUE PLAYER
+  //
     // Update the debouncer
     blueButton.update();
     // Get the updated value
@@ -219,7 +214,7 @@ void loop(){
           //
           // SERVICE WINNER HERE
           //
-          Serial.print("Winner! Winner! Winner!\n");
+          Serial.print("Winner! Blue! Winner!\n");
           blueCount = 0;
         }
         updateScreen(blueCount, redCount);
@@ -229,29 +224,29 @@ void loop(){
     blastButtonState = bbuttonState;
     
    
-  // //SERVICE RED PLAYER
+  //SERVICE RED PLAYER
   
-  //  // Update the debouncer
-  //  redButton.update();
-  //  // Get the updated value
-  //  int rbuttonState = redButton.read();
+   // Update the debouncer
+   redButton.update();
+   // Get the updated value
+   int rbuttonState = redButton.read();
    
-  //  // If button is actually pressed
-  //  if (rbuttonState != rlastButtonState) {
-  //    if (rbuttonState == HIGH) {
-  //      // Do work on press
-  //      // Serial.print("LOW\n");
-  //      redCount++;
-  //      if(redCount == 10){
-  //        //
-  //        // SERVICE WINNER HERE
-  //        //
-  //        Serial.print("Winner! Winner! Winner!\n");
-  //        redCount = 0;
-  //      }
-  //      updateScreen(blueCount, redCount);
-  //    }
-  //  }
-  //  // save the current button state
-  //  rlastButtonState = rbuttonState;
+   // If button is actually pressed
+   if (rbuttonState != rlastButtonState) {
+     if (rbuttonState == HIGH) {
+       // Do work on press
+       // Serial.print("LOW\n");
+       redCount++;
+       if(redCount == 10){
+         //
+         // SERVICE WINNER HERE
+         //
+         Serial.print("Winner! Red! Winner!\n");
+         redCount = 0;
+       }
+       updateScreen(blueCount, redCount);
+     }
+   }
+   // save the current button state
+   rlastButtonState = rbuttonState;
 }
