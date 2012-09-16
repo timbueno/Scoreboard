@@ -1,14 +1,17 @@
 #include <Bounce.h>
 
+// Define button pins
 #define BLUEBUTTON 7
 #define REDBUTTON 6
 
+// Define Transistor control pins
 #define BLUETRANS 5
 #define REDTRANS 4
 
-int latchPin = 8; // ST_CP pin
-int clockPin = 9; // SH_CP pin
-int dataPin = 10; // DS pin
+// Define shift register control pins
+int latchPin = 8; // RCLK pin
+int clockPin = 9; // SRCLK pin
+int dataPin = 10; // SER pin
 
 int n = 1;
 
@@ -43,7 +46,6 @@ byte redByte = segArray[redCount];
 
 // Timer2 reload value, globally available
 unsigned int tcnt2;
-
 
 ////////////////////////////////////////////////
 // USER FUNCTIONS
@@ -187,8 +189,6 @@ void setup(){
 //
 void loop(){
     if(n == 1) {
-      // digitalWrite(BLUETRANS, LOW);
-      // digitalWrite(REDTRANS, HIGH);
       Serial.print("###                 ###\n");
       Serial.print("### SCORE-TRON 3000 ###\n");
       Serial.print("###                 ###\n");
@@ -223,9 +223,10 @@ void loop(){
     // save the current button state
     blastButtonState = bbuttonState;
     
-   
+  //
   //SERVICE RED PLAYER
-  
+  //
+    
    // Update the debouncer
    redButton.update();
    // Get the updated value
