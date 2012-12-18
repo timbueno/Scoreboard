@@ -2,16 +2,16 @@
 
 // Define button pins
 #define BLUEBUTTON 7
-#define REDBUTTON 6
+#define REDBUTTON 8
 
 // Define Transistor control pins
 #define BLUETRANS 5
-#define REDTRANS 4
+#define REDTRANS 6
 
 // Define shift register control pins
-int latchPin = 8; // RCLK pin
-int clockPin = 9; // SRCLK pin
-int dataPin = 10; // SER pin
+int latchPin = 3; // RCLK pin
+int clockPin = 2; // SRCLK pin
+int dataPin = 4; // SER pin
 
 int n = 1;
 
@@ -24,17 +24,19 @@ volatile int active_display = 0;
 // Make array of 7 seg digits
 // Common anode means digital low (0) turns an led ON!
 //
-byte segArray[10] = {  B00011000, // 0 dec
-                       B01111011, // 1 dec
-                       B00101100, // 2 dec
+
+byte segArray[10] = {  B00010001, // 0 dec
+                       B01111101, // 1 dec
+                       B00100011, // 2 dec
                        B00101001, // 3 dec
-                       B01001011, // 4 dec
+                       B01001101, // 4 dec
                        B10001001, // 5 dec
-                       B11001000, // 6 dec
-                       B00111011, // 7 dec
-                       B00001000, // 8 dec
-                       B00001011  // 9 dec
+                       B11000001, // 6 dec
+                       B00111101, // 7 dec
+                       B00000001, // 8 dec
+                       B00001101  // 9 dec
                       };
+
 
 // Instantiate player's scores                    
 int blueCount = 0;
